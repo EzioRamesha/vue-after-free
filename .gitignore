@@ -13,3 +13,6 @@ bun.lockb
 
 # Build output
 dist
+
+# UFS2 image (256MB, generated via Docker/CI — too large for GitHub)
+download0.dat
