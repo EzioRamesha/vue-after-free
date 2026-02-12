@@ -44,9 +44,9 @@ function logger_addEntry (level: LogLevel, message: string): void {
 
   logger_history.push(entry)
 
-  // Trim old entries if over max
+  // Trim old entries if over max — use splice to modify in-place (no GC overhead)
   if (logger_history.length > logger_maxHistory) {
-    logger_history = logger_history.slice(logger_history.length - logger_maxHistory)
+    logger_history.splice(0, logger_history.length - logger_maxHistory)
   }
 
   // Also send to the original log function

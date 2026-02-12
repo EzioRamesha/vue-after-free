@@ -106,6 +106,9 @@ import { logger_info, logger_error, logger_warn } from 'download0/logger'
   // Helper to create a null-terminated path buffer
   function makePathBuf (path: string): BigInt {
     const buf = mem.malloc(path.length + 1)
+    if (!buf || buf.eq(new BigInt(0, 0))) {
+      throw new Error('malloc failed for path: ' + path)
+    }
     for (let i = 0; i < path.length; i++) {
       mem.view(buf).setUint8(i, path.charCodeAt(i))
     }
@@ -638,10 +641,19 @@ import { logger_info, logger_error, logger_warn } from 'download0/logger'
       }
 
       const len = (bytesRead instanceof BigInt) ? bytesRead.lo : bytesRead
-      let content = ''
-      for (let i = 0; i < len; i++) {
-        content += String.fromCharCode(mem.view(readBuf).getUint8(i))
+      // Build string in chunks to avoid O(n²) char-by-char concatenation
+      const CHUNK = 4096
+      const parts: string[] = []
+      const readView = mem.view(readBuf)
+      for (let off = 0; off < len; off += CHUNK) {
+        const end = (off + CHUNK > len) ? len : off + CHUNK
+        let piece = ''
+        for (let i = off; i < end; i++) {
+          piece += String.fromCharCode(readView.getUint8(i))
+        }
+        parts.push(piece)
       }
+      const content = parts.join('')
 
       log('Read ' + len + ' bytes from: ' + filePath)
       return content

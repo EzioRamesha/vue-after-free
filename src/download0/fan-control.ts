@@ -121,6 +121,9 @@ export function applyFanFix (): boolean {
 
 function _makePathBuf (path: string): BigInt {
   const buf = mem.malloc(path.length + 1)
+  if (!buf || buf.eq(new BigInt(0, 0))) {
+    throw new Error('malloc failed for path buffer: ' + path)
+  }
   for (let i = 0; i < path.length; i++) {
     mem.view(buf).setUint8(i, path.charCodeAt(i))
   }
@@ -288,7 +291,8 @@ function _iccReadTemperature (iccFd: BigInt): number {
   new Style({ name: 'fc_temp_warm', color: 'rgb(255,200,60)', size: 42 })
   new Style({ name: 'fc_temp_cool', color: 'rgb(80,200,255)', size: 42 })
 
-  // Register syscalls for ICC
+  // Syscalls already registered by applyFanFix() or at module scope
+  // fn.register for fan_open/fan_close/fan_ioctl — safe to re-register (idempotent)
   fn.register(0x05, 'fan_open', ['bigint', 'bigint', 'bigint'], 'bigint')
   fn.register(0x06, 'fan_close', ['bigint'], 'bigint')
   fn.register(0x36, 'fan_ioctl', ['bigint', 'bigint', 'bigint'], 'bigint')

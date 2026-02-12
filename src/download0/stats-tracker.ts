@@ -3,9 +3,14 @@ import { checkJailbroken } from 'download0/check-jailbroken'
 
 // Statistics tracker using syscalls for direct file I/O
 
-// Register read syscall if not already registered
 include('check-jailbroken.js')
 log('check-jailbroken.js loaded')
+
+// Register syscalls ONCE at module load — no need to re-register per call
+fn.register(0x3, 'read', ['bigint', 'bigint', 'number'], 'bigint')
+fn.register(0x4, 'write', ['bigint', 'bigint', 'number'], 'bigint')
+fn.register(0x5, 'open', ['string', 'number', 'number'], 'bigint')
+fn.register(0x6, 'close', ['bigint'], 'bigint')
 
 export const stats = {
   total: 0,
@@ -15,10 +20,9 @@ export const stats = {
   // Load stats from file using syscalls
   load: function () {
     try {
-      fn.register(0x3, 'read', ['bigint', 'bigint', 'number'], 'bigint')
-      fn.register(0x4, 'write', ['bigint', 'bigint', 'number'], 'bigint')
-      fn.register(0x5, 'open', ['string', 'number', 'number'], 'bigint')
-      fn.register(0x6, 'close', ['bigint'], 'bigint')
+      // Determine correct filepath based on JB status (cached — no extra syscalls)
+      this.filepath = checkJailbroken() ? '/mnt/sandbox/download/CUSA00960/stats.json' : '/download0/stats.json'
+
       const fd = fn.open(this.filepath, 0, 0)  // O_RDONLY
       if (fd.lt(0)) {
         log('[STATS] No stats file found, starting fresh')
@@ -61,12 +65,6 @@ export const stats = {
   // Save stats to file using syscalls
   save: function () {
     try {
-      fn.register(0x3, 'read', ['bigint', 'bigint', 'number'], 'bigint')
-      fn.register(0x4, 'write', ['bigint', 'bigint', 'number'], 'bigint')
-      fn.register(0x5, 'open', ['string', 'number', 'number'], 'bigint')
-      fn.register(0x6, 'close', ['bigint'], 'bigint')
-      this.filepath = checkJailbroken() ? '/mnt/sandbox/download/CUSA00960/stats.json' : '/download0/stats.json'
-
       const data = JSON.stringify({
         total: this.total,
         success: this.success
@@ -83,6 +81,11 @@ export const stats = {
 
       // Write data to file
       const buf = mem.malloc(data.length)
+      if (!buf || buf.eq(new BigInt(0, 0))) {
+        log('[STATS] malloc failed for write buffer')
+        fn.close(fd)
+        return false
+      }
       for (let i = 0; i < data.length; i++) {
         mem.view(buf.add(i)).setUint8(0, data.charCodeAt(i))
       }

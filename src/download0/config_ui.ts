@@ -166,10 +166,10 @@ if (typeof lang === 'undefined') {
   ]
 
   const centerX = 960
-  const startY = 280
-  const buttonSpacing = 80
+  const startY = 260
+  const buttonSpacing = 53
   const buttonWidth = 400
-  const buttonHeight = 60
+  const buttonHeight = 45
 
   const state = ui_createMenuState(buttonWidth, buttonHeight)
 
@@ -355,11 +355,34 @@ if (typeof lang === 'undefined') {
     }
   }
 
+  // Validate logical constraints between fan settings
+  function validateFanConfig (): void {
+    // Ensure low threshold < high threshold
+    if (currentConfig.fan_threshold >= currentConfig.fan_threshold_high) {
+      // Bump high threshold above low
+      const lowIdx = fanThresholdValues.indexOf(currentConfig.fan_threshold)
+      if (lowIdx >= 0 && lowIdx < fanThresholdValues.length - 1) {
+        currentConfig.fan_threshold_high = fanThresholdValues[lowIdx + 1]!
+      } else {
+        currentConfig.fan_threshold_high = currentConfig.fan_threshold + 5
+      }
+      log('Auto-adjusted fan_threshold_high to ' + currentConfig.fan_threshold_high)
+    }
+    // Ensure slow <= med <= fast speeds
+    if (currentConfig.fan_low_speed > currentConfig.fan_med_speed) {
+      currentConfig.fan_med_speed = currentConfig.fan_low_speed
+    }
+    if (currentConfig.fan_med_speed > currentConfig.fan_high_speed) {
+      currentConfig.fan_high_speed = currentConfig.fan_med_speed
+    }
+  }
+
   function saveConfig () {
     if (!configLoaded) {
       log('Config not loaded yet, skipping save')
       return
     }
+    validateFanConfig()
     let configContent = 'var CONFIG = {\n'
     configContent += '    autolapse: ' + currentConfig.autolapse + ',\n'
     configContent += '    autopoop: ' + currentConfig.autopoop + ',\n'
@@ -572,6 +595,13 @@ if (typeof lang === 'undefined') {
 
       updateValueText(state.currentButton)
       saveConfig()
+      // Refresh all fan-related values in case validation adjusted them
+      for (let vi = 0; vi < configOptions.length; vi++) {
+        const opt = configOptions[vi]!
+        if (opt.type === 'fan_threshold' || opt.type === 'fan_speed') {
+          updateValueText(vi)
+        }
+      }
     }
   }
 

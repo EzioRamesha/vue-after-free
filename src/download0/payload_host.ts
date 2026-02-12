@@ -407,18 +407,32 @@ import { sfx_playNav, sfx_playSelect } from 'download0/sfx'
             if (!fd.eq(new BigInt(0xffffffff, 0xffffffff))) {
               const buf_size = 1024 * 1024 * 1  // 1 MiB
               const readBuf = mem.malloc(buf_size)
+              if (!readBuf || readBuf.eq(new BigInt(0, 0))) {
+                fn.close_sys(fd)
+                log('ERROR: malloc failed for read buffer')
+                return
+              }
               const read_len = fn.read_sys(fd, readBuf, new BigInt(0, buf_size))
 
               fn.close_sys(fd)
 
-              let scriptContent = ''
               const len = (read_len instanceof BigInt) ? read_len.lo : read_len
 
               log('File read size: ' + len + ' bytes')
 
-              for (let i = 0; i < len; i++) {
-                scriptContent += String.fromCharCode(mem.view(readBuf).getUint8(i))
+              // Build string in chunks to avoid O(n²) char-by-char concatenation
+              const CHUNK = 4096
+              const parts: string[] = []
+              const readView = mem.view(readBuf)
+              for (let off = 0; off < len; off += CHUNK) {
+                const end = (off + CHUNK > len) ? len : off + CHUNK
+                let piece = ''
+                for (let i = off; i < end; i++) {
+                  piece += String.fromCharCode(readView.getUint8(i))
+                }
+                parts.push(piece)
               }
+              const scriptContent = parts.join('')
 
               log('Executing via eval()...')
               // eslint-disable-next-line no-eval

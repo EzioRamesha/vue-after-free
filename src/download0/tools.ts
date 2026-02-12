@@ -52,6 +52,9 @@ import { logger_info, logger_error } from 'download0/logger'
   // Helper to create null-terminated path buffer
   function makePathBuf (path: string): BigInt {
     const buf = mem.malloc(path.length + 1)
+    if (!buf || buf.eq(new BigInt(0, 0))) {
+      throw new Error('malloc failed for path: ' + path)
+    }
     for (let i = 0; i < path.length; i++) {
       mem.view(buf).setUint8(i, path.charCodeAt(i))
     }
@@ -512,17 +515,29 @@ import { logger_info, logger_error } from 'download0/logger'
 
       const bufSize = 2 * 1024 * 1024
       const readBuf = mem.malloc(bufSize)
+      if (!readBuf || readBuf.eq(new BigInt(0, 0))) {
+        fn.tl_close(fd)
+        return null
+      }
       const bytesRead = fn.tl_read(fd, readBuf, new BigInt(0, bufSize))
       fn.tl_close(fd)
 
       if (bytesRead.eq(new BigInt(0xffffffff, 0xffffffff))) return null
 
       const len = (bytesRead instanceof BigInt) ? bytesRead.lo : bytesRead
-      let content = ''
-      for (let i = 0; i < len; i++) {
-        content += String.fromCharCode(mem.view(readBuf).getUint8(i))
+      // Build string in chunks to avoid O(n²) single-char concatenation
+      const CHUNK = 4096
+      const parts: string[] = []
+      const view = mem.view(readBuf)
+      for (let off = 0; off < len; off += CHUNK) {
+        const end = (off + CHUNK > len) ? len : off + CHUNK
+        let piece = ''
+        for (let i = off; i < end; i++) {
+          piece += String.fromCharCode(view.getUint8(i))
+        }
+        parts.push(piece)
       }
-      return content
+      return parts.join('')
     } catch (e) {
       return null
     }
@@ -953,10 +968,42 @@ import { logger_info, logger_error } from 'download0/logger'
       return
     }
 
-    // Main tool menu navigation
-    if (ui_handleVerticalNav(state, keyCode)) {
-      sfx_playNav()
-      updateDescription()
+    // Main tool menu navigation — custom scroll-aware handler
+    const backBtnIdx = Math.min(tools.length, VISIBLE_TOOLS) // back button is after visible tools
+    if (keyCode === 4) { // Up
+      if (state.currentButton > 0) {
+        state.currentButton--
+        ui_updateHighlight(state)
+        sfx_playNav()
+        updateDescription()
+      } else if (scrollOffset > 0) {
+        // Scroll the list up
+        scrollOffset--
+        refreshToolList()
+        sfx_playNav()
+        updateDescription()
+      }
+      return
+    } else if (keyCode === 6) { // Down
+      if (state.currentButton < backBtnIdx - 1) {
+        // Move within visible tool slots
+        state.currentButton++
+        ui_updateHighlight(state)
+        sfx_playNav()
+        updateDescription()
+      } else if (state.currentButton === backBtnIdx - 1 && scrollOffset + VISIBLE_TOOLS < tools.length) {
+        // Scroll the list down — more tools below
+        scrollOffset++
+        refreshToolList()
+        sfx_playNav()
+        updateDescription()
+      } else if (state.currentButton < state.buttons.length - 1) {
+        // Move to back button
+        state.currentButton++
+        ui_updateHighlight(state)
+        sfx_playNav()
+        updateDescription()
+      }
       return
     }
 
@@ -965,7 +1012,7 @@ import { logger_info, logger_error } from 'download0/logger'
         // Back button
         log('Going back to main menu...')
         include('main-menu.js')
-      } else if (state.currentButton < Math.min(tools.length, VISIBLE_TOOLS)) {
+      } else if (state.currentButton < backBtnIdx) {
         executeTool(state.currentButton)
       }
     } else if (keyCode === 13) { // Circle - Back
